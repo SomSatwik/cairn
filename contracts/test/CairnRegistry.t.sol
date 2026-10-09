@@ -420,4 +420,95 @@ contract CairnRegistryTest is Test {
         vm.prank(attester1);
         registry.attest(DOC_HASH, VERDICT_AUTHENTIC, EVIDENCE_HASH, 9000);
     }
+
+    // ──────────────────────────────────────────────
+    // P256 Passkey Verification Tests (0x0100 / EIP-7951)
+    // ──────────────────────────────────────────────
+
+    function test_commitForP256() public {
+        uint256 x = 0x1111111111111111111111111111111111111111111111111111111111111111;
+        uint256 y = 0x2222222222222222222222222222222222222222222222222222222222222222;
+        address passkeyClaimant = address(uint160(uint256(keccak256(abi.encodePacked(x, y)))));
+
+        bytes32 commitment = keccak256(abi.encodePacked(DOC_HASH, SALT, passkeyClaimant));
+        uint256 nonce = 0;
+        uint256 r = 0x3333333333333333333333333333333333333333333333333333333333333333;
+        uint256 s = 0x4444444444444444444444444444444444444444444444444444444444444444;
+
+        // Mock the Monad P256 precompile at 0x0100 to return valid (1)
+        vm.mockCall(
+            address(0x0100),
+            abi.encode(keccak256(abi.encodePacked(block.chainid, address(registry), nonce, keccak256(abi.encodePacked("commit", commitment)))), r, s, x, y),
+            abi.encode(uint256(1))
+        );
+
+        // Relayer submits
+        vm.prank(bob);
+        registry.commitForP256(commitment, x, y, nonce, r, s);
+
+        (uint64 ts, bool revealed) = registry.commitments(commitment);
+        assertGt(ts, 0, "commitment timestamp set");
+        assertFalse(revealed, "not revealed yet");
+        assertEq(registry.nonces(passkeyClaimant), 1, "nonce incremented");
+    }
+
+    function test_revealForP256() public {
+        uint256 x = 0x1111111111111111111111111111111111111111111111111111111111111111;
+        uint256 y = 0x2222222222222222222222222222222222222222222222222222222222222222;
+        address passkeyClaimant = address(uint160(uint256(keccak256(abi.encodePacked(x, y)))));
+
+        bytes32 commitment = keccak256(abi.encodePacked(DOC_HASH, SALT, passkeyClaimant));
+        uint256 nonce = 0;
+        uint256 r = 0x3333333333333333333333333333333333333333333333333333333333333333;
+        uint256 s = 0x4444444444444444444444444444444444444444444444444444444444444444;
+
+        // Mock precompile for commit
+        vm.mockCall(
+            address(0x0100),
+            abi.encode(keccak256(abi.encodePacked(block.chainid, address(registry), nonce, keccak256(abi.encodePacked("commit", commitment)))), r, s, x, y),
+            abi.encode(uint256(1))
+        );
+
+        vm.prank(bob);
+        registry.commitForP256(commitment, x, y, nonce, r, s);
+
+        vm.warp(block.timestamp + 50);
+
+        // Mock precompile for reveal
+        nonce = 1;
+        vm.mockCall(
+            address(0x0100),
+            abi.encode(keccak256(abi.encodePacked(block.chainid, address(registry), nonce, keccak256(abi.encodePacked("reveal", DOC_HASH, SALT)))), r, s, x, y),
+            abi.encode(uint256(1))
+        );
+
+        vm.prank(bob);
+        registry.revealForP256(DOC_HASH, SALT, x, y, nonce, r, s);
+
+        CairnRegistry.Claim[] memory docClaims = registry.getClaims(DOC_HASH);
+        assertEq(docClaims.length, 1, "claim recorded");
+        assertEq(docClaims[0].claimant, passkeyClaimant, "claimant is passkey identity");
+    }
+
+    function test_p256InvalidSignatureReverts() public {
+        uint256 x = 0x1111111111111111111111111111111111111111111111111111111111111111;
+        uint256 y = 0x2222222222222222222222222222222222222222222222222222222222222222;
+        address passkeyClaimant = address(uint160(uint256(keccak256(abi.encodePacked(x, y)))));
+
+        bytes32 commitment = keccak256(abi.encodePacked(DOC_HASH, SALT, passkeyClaimant));
+        uint256 nonce = 0;
+        uint256 r = 0x3333333333333333333333333333333333333333333333333333333333333333;
+        uint256 s = 0x4444444444444444444444444444444444444444444444444444444444444444;
+
+        // Mock precompile returning 0 (invalid)
+        vm.mockCall(
+            address(0x0100),
+            abi.encode(keccak256(abi.encodePacked(block.chainid, address(registry), nonce, keccak256(abi.encodePacked("commit", commitment)))), r, s, x, y),
+            abi.encode(uint256(0))
+        );
+
+        vm.prank(bob);
+        vm.expectRevert(CairnRegistry.InvalidSignature.selector);
+        registry.commitForP256(commitment, x, y, nonce, r, s);
+    }
 }

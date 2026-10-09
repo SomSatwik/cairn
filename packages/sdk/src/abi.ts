@@ -1,6 +1,19 @@
 export const cairnRegistryAbi = [
   {
     "type": "function",
+    "name": "P256_VERIFIER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "attest",
     "inputs": [
       {
@@ -161,6 +174,44 @@ export const cairnRegistryAbi = [
         "name": "s",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "commitForP256",
+    "inputs": [
+      {
+        "name": "commitment",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "x",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "y",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "nonce",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "r",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "s",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -424,6 +475,49 @@ export const cairnRegistryAbi = [
         "name": "s",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "revealForP256",
+    "inputs": [
+      {
+        "name": "docHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "salt",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "x",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "y",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "nonce",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "r",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "s",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],

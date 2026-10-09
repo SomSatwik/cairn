@@ -181,6 +181,75 @@ contract CairnRegistry {
         emit Revealed(docHash, signer, c.timestamp);
     }
 
+    /// @notice Commit on behalf of a passkey holder verified via P256 precompile (0x0100 / EIP-7951).
+    /// @param commitment The hash commitment
+    /// @param x Public key x-coordinate
+    /// @param y Public key y-coordinate
+    /// @param nonce The claimant's per-identity nonce
+    /// @param r Signature r
+    /// @param s Signature s
+    function commitForP256(
+        bytes32 commitment,
+        uint256 x,
+        uint256 y,
+        uint256 nonce,
+        uint256 r,
+        uint256 s
+    ) external {
+        address claimant = _verifyP256Signature(x, y, nonce, keccak256(abi.encodePacked("commit", commitment)), r, s);
+
+        if (commitments[commitment].timestamp != 0) revert AlreadyCommitted();
+
+        commitments[commitment] = Commitment({
+            // casting to 'uint64' is safe because block.timestamp won't overflow uint64 until year ~584B
+            // forge-lint: disable-next-line(unsafe-typecast)
+            timestamp: uint64(block.timestamp),
+            revealed: false
+        });
+
+        // forge-lint: disable-next-line(unsafe-typecast)
+        emit Committed(commitment, claimant, uint64(block.timestamp));
+    }
+
+    /// @notice Reveal on behalf of a passkey holder verified via P256 precompile (0x0100 / EIP-7951).
+    /// @param docHash The document hash
+    /// @param salt The salt
+    /// @param x Public key x-coordinate
+    /// @param y Public key y-coordinate
+    /// @param nonce The claimant's per-identity nonce
+    /// @param r Signature r
+    /// @param s Signature s
+    function revealForP256(
+        bytes32 docHash,
+        bytes32 salt,
+        uint256 x,
+        uint256 y,
+        uint256 nonce,
+        uint256 r,
+        uint256 s
+    ) external {
+        address claimant = _verifyP256Signature(x, y, nonce, keccak256(abi.encodePacked("reveal", docHash, salt)), r, s);
+
+        bytes32 commitment = keccak256(abi.encodePacked(docHash, salt, claimant));
+        Commitment storage c = commitments[commitment];
+
+        if (c.timestamp == 0) revert CommitmentNotFound();
+        if (c.revealed) revert AlreadyRevealed();
+
+        c.revealed = true;
+
+        claims[docHash].push(Claim({
+            docHash: docHash,
+            claimant: claimant,
+            commitTimestamp: c.timestamp,
+            // forge-lint: disable-next-line(unsafe-typecast)
+            revealTimestamp: uint64(block.timestamp),
+            salt: salt
+        }));
+
+        emit Revealed(docHash, claimant, c.timestamp);
+    }
+
     // ──────────────────────────────────────────────
     // Attestations
     // ──────────────────────────────────────────────
@@ -319,5 +388,30 @@ contract CairnRegistry {
         if (recovered != signer || recovered == address(0)) revert InvalidSignature();
 
         nonces[signer] = nonce + 1;
+    }
+
+    /// @notice Monad P256 precompile address (0x0100 / EIP-7951)
+    address public constant P256_VERIFIER = address(0x0100);
+
+    function _verifyP256Signature(
+        uint256 x,
+        uint256 y,
+        uint256 nonce,
+        bytes32 payload,
+        uint256 r,
+        uint256 s
+    ) internal returns (address identity) {
+        identity = address(uint160(uint256(keccak256(abi.encodePacked(x, y)))));
+        if (nonce != nonces[identity]) revert InvalidNonce();
+
+        bytes32 digest = keccak256(abi.encodePacked(block.chainid, address(this), nonce, payload));
+
+        bytes memory input = abi.encode(digest, r, s, x, y);
+        (bool success, bytes memory output) = P256_VERIFIER.staticcall(input);
+        if (!success || output.length != 32 || abi.decode(output, (uint256)) != 1) {
+            revert InvalidSignature();
+        }
+
+        nonces[identity] = nonce + 1;
     }
 }

@@ -144,6 +144,91 @@ export class CairnClient {
     }
   }
 
+  /**
+   * Derive the onchain identity address from a P256 passkey public key coordinates (x, y)
+   */
+  public derivePasskeyAddress(x: bigint, y: bigint): Address {
+    const pubKeyHash = keccak256(encodePacked(['uint256', 'uint256'], [x, y]));
+    return `0x${pubKeyHash.slice(-40)}` as Address;
+  }
+
+  /**
+   * Commit a claim for a P256 passkey holder via relayer
+   */
+  public async claimP256(params: {
+    commitment: Hex;
+    x: bigint;
+    y: bigint;
+    nonce: bigint;
+    r: bigint;
+    s: bigint;
+  }) {
+    try {
+      const wallet = this.requireWallet();
+      const { request } = await this.publicClient.simulateContract({
+        address: this.contractAddress,
+        abi: cairnRegistryAbi,
+        functionName: 'commitForP256',
+        args: [params.commitment, params.x, params.y, params.nonce, params.r, params.s],
+        account: this.account || wallet.account,
+      });
+
+      const txHash = await wallet.writeContract(request);
+      return { txHash, commitment: params.commitment };
+    } catch (error: any) {
+      throw new CairnError(`Claim P256 failed: ${error.message}`, 'COMMIT_FAILED');
+    }
+  }
+
+  /**
+   * Reveal a claim for a P256 passkey holder via relayer
+   */
+  public async revealP256(params: {
+    docHash: Hex;
+    salt: Hex;
+    x: bigint;
+    y: bigint;
+    nonce: bigint;
+    r: bigint;
+    s: bigint;
+  }) {
+    try {
+      const wallet = this.requireWallet();
+      const { request } = await this.publicClient.simulateContract({
+        address: this.contractAddress,
+        abi: cairnRegistryAbi,
+        functionName: 'revealForP256',
+        args: [params.docHash, params.salt, params.x, params.y, params.nonce, params.r, params.s],
+        account: this.account || wallet.account,
+      });
+
+      const txHash = await wallet.writeContract(request);
+      const receipt = await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+
+      let commitTimestamp: bigint | undefined;
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: cairnRegistryAbi,
+            data: log.data,
+            topics: log.topics,
+          });
+          if (decoded.eventName === 'Revealed') {
+            commitTimestamp = (decoded.args as { commitTimestamp: bigint }).commitTimestamp;
+            break;
+          }
+        } catch {}
+      }
+
+      return {
+        txHash,
+        commitTimestamp: commitTimestamp ? Number(commitTimestamp) : Math.floor(Date.now() / 1000),
+      };
+    } catch (error: any) {
+      throw new CairnError(`Reveal P256 failed: ${error.message}`, 'REVEAL_FAILED');
+    }
+  }
+
   public async verify(docHash: Hex) {
     try {
       const data = await this.publicClient.readContract({
