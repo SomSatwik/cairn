@@ -2,3 +2,5 @@ packages:
   - "packages/*"
   - "apps/*"
   - "contracts"
+allowBuilds:
+  esbuild: true
