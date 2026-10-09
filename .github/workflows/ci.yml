@@ -56,5 +56,11 @@ jobs:
       - name: Test Attester
         run: pnpm --filter @cairn/attester run test
 
+      - name: Build Relayer
+        run: pnpm --filter @cairn/relayer run build
+
+      - name: Test Relayer
+        run: pnpm --filter @cairn/relayer run test
+
       - name: Build Web App
         run: pnpm --filter @cairn/web run build
