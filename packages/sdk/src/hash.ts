@@ -86,3 +86,40 @@ export async function hashBuffer(buffer: ArrayBuffer | Uint8Array): Promise<Hex>
     );
   }
 }
+
+/**
+ * Hash a file using a Web Worker if available to keep the main thread fluid,
+ * with automatic fallback to in-thread streaming if Web Workers are unavailable.
+ */
+export async function hashFileWithWorker(
+  file: File,
+  workerScriptUrl?: string
+): Promise<Hex> {
+  if (typeof Worker !== 'undefined' && workerScriptUrl) {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(workerScriptUrl, { type: 'module' });
+      const id = Math.random().toString(36).slice(2);
+
+      worker.onmessage = (event: MessageEvent) => {
+        if (event.data?.id !== id) return;
+        if (event.data.type === 'HASH_COMPLETE') {
+          worker.terminate();
+          resolve(event.data.hash as Hex);
+        } else if (event.data.type === 'HASH_ERROR') {
+          worker.terminate();
+          reject(new CairnError(event.data.error, 'HASH_FAILED'));
+        }
+      };
+
+      worker.onerror = (err) => {
+        worker.terminate();
+        reject(new CairnError(`Worker error: ${err.message}`, 'HASH_FAILED'));
+      };
+
+      worker.postMessage({ id, type: 'HASH_FILE', file });
+    });
+  }
+
+  // Fallback to direct streaming hash
+  return hashFile(file);
+}
