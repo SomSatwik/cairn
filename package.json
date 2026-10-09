@@ -1,0 +1,17 @@
+{
+  "name": "cairn",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Onchain priority claims and attestations — prove who documented something first.",
+  "license": "MIT",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "dev": "pnpm --filter @cairn/web dev"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  }
+}
