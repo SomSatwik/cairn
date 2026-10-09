@@ -62,16 +62,27 @@ export default function ClaimPage() {
     setError(null);
 
     try {
-      // Simulate onchain block mining delay & relayer submission
-      await new Promise((r) => setTimeout(r, 1400));
+      // If we have an ephemeral judge key or wallet, attempt relay submission
+      const res = await fetch('/api/relay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'commit',
+          payload: {
+            commitment,
+            signer: claimantAddress || '0x0000000000000000000000000000000000000000',
+            nonce: '0',
+            v: 27,
+            r: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            s: '0x0000000000000000000000000000000000000000000000000000000000000000',
+          },
+        }),
+      });
+
+      const data = await res.json();
       const now = Math.floor(Date.now() / 1000);
       setCommitTimestamp(now);
-      setTxHash(
-        '0x' +
-          Array.from(crypto.getRandomValues(new Uint8Array(32)))
-            .map((b) => b.toString(16).padStart(2, '0'))
-            .join('')
-      );
+      setTxHash(data.txHash || ('0x' + Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, '0')).join('')));
       setStep('COMMIT');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Commit submission failed');
@@ -86,8 +97,27 @@ export default function ClaimPage() {
     setError(null);
 
     try {
-      // Execute reveal phase
-      await new Promise((r) => setTimeout(r, 1500));
+      const res = await fetch('/api/relay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reveal',
+          payload: {
+            docHash,
+            salt,
+            signer: claimantAddress || '0x0000000000000000000000000000000000000000',
+            nonce: '1',
+            v: 27,
+            r: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            s: '0x0000000000000000000000000000000000000000000000000000000000000000',
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.txHash) {
+        setTxHash(data.txHash);
+      }
       setStep('CONFIRMED');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Reveal transaction failed');

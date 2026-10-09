@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { HashChip } from '@/components/ui/HashChip';
 import { SAMPLE_RECORDS, type SeededRecord } from '@/lib/judgeMode';
+import { fetchOnchainRecord } from '@/lib/onchain';
 import { keccak256, stringToHex, type Hex } from 'viem';
 
 function VerifyContent() {
@@ -34,11 +35,35 @@ function VerifyContent() {
     }
   }, [initialHash]);
 
-  const handleSearch = (query: string) => {
+  const handleSearch = async (query: string) => {
     setIsSearching(true);
     const cleanQuery = query.trim().toLowerCase();
 
-    // Check if matching sample record
+    // 1. Check live onchain record if it's a valid 32-byte hash
+    if (cleanQuery.startsWith('0x') && cleanQuery.length === 66) {
+      try {
+        const onchain = await fetchOnchainRecord(cleanQuery as Hex);
+        if (onchain) {
+          setActiveRecord({
+            id: 'onchain-record',
+            title: 'Verified Onchain Document Record',
+            category: 'Research',
+            docHash: cleanQuery as Hex,
+            claimant: onchain.claimant,
+            commitTimestamp: onchain.commitTimestamp,
+            revealTimestamp: onchain.commitTimestamp,
+            summary: 'Live document priority claim verified directly against CairnRegistry on Monad Testnet.',
+            attestations: onchain.attestations,
+          });
+          setIsSearching(false);
+          return;
+        }
+      } catch (e) {
+        console.warn('Onchain query fallback:', e);
+      }
+    }
+
+    // 2. Check if matching sample record
     const match = SAMPLE_RECORDS.find(
       (r) =>
         r.docHash.toLowerCase() === cleanQuery ||
