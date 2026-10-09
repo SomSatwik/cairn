@@ -10,6 +10,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@cairn/relayer':
+        specifier: workspace:*
+        version: link:../../packages/relayer
       '@cairn/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -61,6 +64,25 @@ importers:
         version: 5.9.3
 
   packages/attester:
+    dependencies:
+      '@cairn/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      viem:
+        specifier: ^2.21.0
+        version: 2.57.4(typescript@5.9.3)
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@1.21.7)(postcss@8.5.29)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.5)
+
+  packages/relayer:
     dependencies:
       '@cairn/sdk':
         specifier: workspace:*
