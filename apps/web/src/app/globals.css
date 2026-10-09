@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-graphite: #0d0e11;
+    --text-primary: #f4f2ed;
+    --text-muted: #8a867d;
+    --border-hairline: rgba(255, 255, 255, 0.08);
+  }
+
+  body {
+    background-color: var(--bg-graphite);
+    color: var(--text-primary);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'tnum';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+}
+
+/* Subtle Film Grain SVG Noise overlay (approx 3.5% opacity) */
+.grain-overlay {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.038'/%3E%3C/svg%3E");
+}
+
+/* Tabular figures for addresses, timestamps, and hashes */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 1px hairline border utility */
+.border-hairline {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.border-hairline-hover:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0f1014;
+}
+::-webkit-scrollbar-thumb {
+  background: #262933;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #343a46;
+}
