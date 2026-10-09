@@ -1,0 +1,60 @@
+name: Cairn CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  contracts:
+    name: Foundry Contract Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Run Forge Tests
+        run: |
+          cd contracts
+          forge test -vv
+
+  packages:
+    name: TypeScript Build & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Build SDK
+        run: pnpm --filter @cairn/sdk run build
+
+      - name: Test SDK
+        run: pnpm --filter @cairn/sdk run test
+
+      - name: Build Attester
+        run: pnpm --filter @cairn/attester run build
+
+      - name: Test Attester
+        run: pnpm --filter @cairn/attester run test
+
+      - name: Build Web App
+        run: pnpm --filter @cairn/web run build

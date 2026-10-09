@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#0D0E11"/>
+  <!-- Subtle Bedrock Line -->
+  <line x1="96" y1="416" x2="416" y2="416" stroke="#485060" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  
+  <!-- Base Foundation Stone -->
+  <path d="M 120 360 Q 256 330 392 360 Q 408 385 380 405 Q 256 415 132 405 Q 104 385 120 360 Z" 
+        fill="#1C1E24" stroke="#8A94A6" stroke-width="3"/>
+  <!-- Base Strata Fissures -->
+  <path d="M 160 380 Q 256 385 352 382" stroke="#485060" stroke-width="1.5" stroke-dasharray="16 8" fill="none" opacity="0.6"/>
+
+  <!-- Middle Stone -->
+  <path d="M 155 285 Q 256 260 357 285 Q 370 315 345 338 Q 256 348 167 338 Q 142 315 155 285 Z" 
+        fill="#252932" stroke="#B8B4AA" stroke-width="3"/>
+  <!-- Middle Strata Lines -->
+  <path d="M 185 308 Q 256 312 327 310" stroke="#646D80" stroke-width="1.5" stroke-dasharray="12 6" fill="none" opacity="0.7"/>
+
+  <!-- Upper Stone (Ochre Rimmed Accent) -->
+  <path d="M 190 205 Q 256 185 322 205 Q 334 235 312 258 Q 256 268 200 258 Q 178 235 190 205 Z" 
+        fill="#2B2925" stroke="#D97736" stroke-width="3.5"/>
+
+  <!-- Apex Capstone Stone -->
+  <path d="M 218 135 Q 256 115 294 135 Q 306 160 288 180 Q 256 188 224 180 Q 206 160 218 135 Z" 
+        fill="#33312D" stroke="#F4F2EC" stroke-width="3"/>
+</svg>
