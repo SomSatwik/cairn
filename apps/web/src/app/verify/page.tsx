@@ -1,8 +1,20 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Search, ShieldCheck, FileText, CheckCircle2, History } from 'lucide-react';
+import {
+  Search,
+  ShieldCheck,
+  FileText,
+  CheckCircle2,
+  Download,
+  Scale,
+  Sparkles,
+  Sliders,
+  Send,
+  AlertCircle,
+  Cpu,
+} from 'lucide-react';
 import { CairnColumn } from '@/components/cairn/CairnColumn';
 import { TimelineRow } from '@/components/ui/TimelineRow';
 import { Input } from '@/components/ui/Input';
@@ -10,6 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { HashChip } from '@/components/ui/HashChip';
 import { SAMPLE_RECORDS, type SeededRecord } from '@/lib/judgeMode';
 import { fetchOnchainRecord } from '@/lib/onchain';
+import { sound } from '@/lib/sound';
 import { keccak256, stringToHex, type Hex } from 'viem';
 
 function VerifyContent() {
@@ -25,15 +38,6 @@ function VerifyContent() {
     notes: '',
   });
   const [isAttesting, setIsAttesting] = useState(false);
-
-  useEffect(() => {
-    if (initialHash) {
-      handleSearch(initialHash);
-    } else {
-      // Default to first sample record
-      setActiveRecord(SAMPLE_RECORDS[0] || null);
-    }
-  }, [initialHash]);
 
   const handleSearch = async (query: string) => {
     setIsSearching(true);
@@ -56,6 +60,7 @@ function VerifyContent() {
             attestations: onchain.attestations,
           });
           setIsSearching(false);
+          sound.playStoneSettle();
           return;
         }
       } catch (e) {
@@ -73,6 +78,7 @@ function VerifyContent() {
 
     if (match) {
       setActiveRecord(match);
+      sound.playStoneSettle();
     } else if (cleanQuery.startsWith('0x') && cleanQuery.length === 66) {
       // Create live record representation for queried hash
       setActiveRecord({
@@ -94,10 +100,19 @@ function VerifyContent() {
           },
         ],
       });
+      sound.playStoneSettle();
     }
 
     setIsSearching(false);
   };
+
+  useEffect(() => {
+    if (initialHash) {
+      handleSearch(initialHash);
+    } else {
+      setActiveRecord(SAMPLE_RECORDS[0] || null);
+    }
+  }, [initialHash]);
 
   const handlePostAttestation = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,7 +120,7 @@ function VerifyContent() {
 
     setIsAttesting(true);
     try {
-      await new Promise((r) => setTimeout(r, 1200));
+      await new Promise((r) => setTimeout(r, 1000));
 
       const newAttestation = {
         attester: '0x14161C028862bE2a173976CA1132A75C4189012E' as Hex,
@@ -127,28 +142,64 @@ function VerifyContent() {
         confidence: '95',
         notes: '',
       });
+
+      sound.playStoneSettle();
     } finally {
       setIsAttesting(false);
     }
   };
 
+  const handleExportPassport = () => {
+    if (!activeRecord) return;
+    const exportData = {
+      protocol: 'CAIRN-STRATA-V1',
+      recordId: activeRecord.id,
+      title: activeRecord.title,
+      category: activeRecord.category,
+      docHash: activeRecord.docHash,
+      claimant: activeRecord.claimant,
+      priorityTimestamp: activeRecord.commitTimestamp,
+      priorityDate: new Date(activeRecord.commitTimestamp * 1000).toISOString(),
+      attestationCount: activeRecord.attestations.length,
+      attestations: activeRecord.attestations,
+      verifiedOnchain: true,
+      network: 'Monad Testnet (10143)',
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cairn-passport-${activeRecord.docHash.slice(2, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    sound.playTick();
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-6 py-16">
+    <div className="max-w-7xl mx-auto px-6 py-12 sm:py-16">
       {/* Header & Quick Lookup */}
       <div className="space-y-4 max-w-3xl mb-10">
+        <div className="inline-flex items-center gap-2 px-3 py-1 bg-graphite-900 border border-hairline rounded-sm text-xs font-mono text-stone-warm-400">
+          <Sparkles className="w-3.5 h-3.5 text-ochre" />
+          <span>Forensic Provenance &amp; Attestation Layer</span>
+        </div>
+
         <h1 className="font-serif text-3xl sm:text-4xl font-normal text-stone-warm-100">
           The Verification Column
         </h1>
-        <p className="text-sm text-stone-warm-400 leading-relaxed">
+        <p className="text-sm text-stone-warm-400 leading-relaxed font-sans">
           Examine the cryptographic provenance of any document. The base stone is
-          the earliest unforgeable claim; attestation stones stack vertically in
-          strict sediment order.
+          the earliest unforgeable claim; attestation stones stack vertically above it
+          in strict chronological sediment order.
         </p>
 
         {/* Search bar */}
         <div className="flex gap-2 pt-2">
           <Input
-            placeholder="Search by docHash (0x...) or sample title..."
+            placeholder="Search by docHash (0x...) or document title..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch(searchQuery)}
@@ -163,7 +214,7 @@ function VerifyContent() {
         {/* Pre-seeded quick samples for judges */}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <span className="text-[11px] font-mono text-stone-warm-500">
-            Judge Samples:
+            Judge Evaluation Samples:
           </span>
           {SAMPLE_RECORDS.map((sample) => (
             <button
@@ -171,21 +222,22 @@ function VerifyContent() {
               onClick={() => {
                 setActiveRecord(sample);
                 setSearchQuery(sample.docHash);
+                sound.playStoneSettle();
               }}
-              className={`px-2 py-0.5 text-xs font-mono rounded-xs border transition-colors ${
+              className={`px-2.5 py-1 text-xs font-mono rounded-xs border transition-colors ${
                 activeRecord?.id === sample.id
-                  ? 'border-ochre bg-ochre/10 text-ochre'
-                  : 'border-hairline text-stone-warm-400 hover:text-stone-warm-200'
+                  ? 'border-ochre bg-ochre/10 text-ochre font-medium'
+                  : 'border-hairline text-stone-warm-400 hover:text-stone-warm-200 bg-graphite-950/60'
               }`}
             >
-              {sample.category}: {sample.title.slice(0, 24)}…
+              {sample.category}: {sample.title.slice(0, 26)}…
             </button>
           ))}
         </div>
       </div>
 
       {activeRecord ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
           {/* Left 5 Columns: The Column Visualizer */}
           <div className="lg:col-span-5 p-8 bg-graphite-900 border border-hairline rounded-sm flex flex-col items-center">
             <div className="w-full flex items-center justify-between pb-6 border-b border-hairline text-xs font-mono text-stone-warm-400">
@@ -195,7 +247,7 @@ function VerifyContent() {
               </span>
             </div>
 
-            <div className="py-12 w-full flex items-center justify-center min-h-[360px]">
+            <div className="py-12 w-full flex items-center justify-center min-h-[380px]">
               <CairnColumn
                 docHash={activeRecord.docHash}
                 claimant={activeRecord.claimant}
@@ -213,164 +265,161 @@ function VerifyContent() {
               </div>
               <div className="flex justify-between">
                 <span className="text-stone-warm-500">Attestations:</span>
-                <span className="text-stone-warm-200 tabular">
-                  {activeRecord.attestations.length} independent
+                <span className="text-ochre tabular font-medium">
+                  {activeRecord.attestations.length} independent verifiers
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Right 7 Columns: Forensic Metadata & Attestation Feed */}
+          {/* Right 7 Columns: Forensic Inspector & Attestation Studio */}
           <div className="lg:col-span-7 space-y-8">
-            {/* Record Overview Card */}
-            <div className="p-6 bg-graphite-900/60 border border-hairline rounded-sm space-y-4">
-              <div className="flex items-start justify-between gap-4">
+            {/* Passport Dossier Card */}
+            <div className="p-6 bg-graphite-900 border border-hairline rounded-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-4">
                 <div>
-                  <span className="text-[10px] uppercase font-mono tracking-wider text-ochre">
-                    {activeRecord.category} Document Record
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-xs bg-graphite-950 border border-white/5 text-ochre uppercase">
+                    {activeRecord.category} Passport
                   </span>
-                  <h2 className="font-serif text-2xl text-stone-warm-100 font-medium mt-1">
+                  <h2 className="font-serif text-2xl font-normal text-stone-warm-100 mt-2">
                     {activeRecord.title}
                   </h2>
                 </div>
-                <div className="px-2.5 py-1 bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 text-xs font-mono rounded-xs flex items-center gap-1.5 shrink-0">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Earliest Known</span>
-                </div>
+                <Button variant="secondary" size="sm" onClick={handleExportPassport} className="gap-1.5">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export JSON Passport</span>
+                </Button>
               </div>
 
-              <p className="text-xs text-stone-warm-300 leading-relaxed">
+              <p className="text-xs text-stone-warm-400 leading-relaxed font-sans">
                 {activeRecord.summary}
               </p>
 
-              <div className="p-3 bg-graphite-950 border border-hairline rounded-sm space-y-2 text-xs font-mono">
-                <div className="flex justify-between items-center">
-                  <span className="text-stone-warm-500">Document Hash:</span>
-                  <HashChip hash={activeRecord.docHash} truncateLength={8} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs font-mono">
+                <div className="p-3 bg-graphite-950 border border-hairline rounded-sm space-y-1">
+                  <span className="text-stone-warm-500 text-[10px] uppercase">Document Hash:</span>
+                  <div className="truncate">
+                    <HashChip hash={activeRecord.docHash} truncateLength={8} />
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-stone-warm-500">Claimant Address:</span>
-                  <HashChip hash={activeRecord.claimant} truncateLength={8} />
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-stone-warm-500">Priority Timestamp:</span>
-                  <span className="text-stone-warm-200 tabular">
-                    {new Date(activeRecord.commitTimestamp * 1000).toLocaleString()}
-                  </span>
+
+                <div className="p-3 bg-graphite-950 border border-hairline rounded-sm space-y-1">
+                  <span className="text-stone-warm-500 text-[10px] uppercase">Claimant Address:</span>
+                  <div className="text-stone-warm-200 truncate tabular">
+                    {activeRecord.claimant}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Sediment Strata Timeline */}
-            <div className="p-6 bg-graphite-900/40 border border-hairline rounded-sm space-y-4">
-              <div className="flex items-center gap-2 text-stone-warm-200 pb-2 border-b border-hairline">
-                <History className="w-4 h-4 text-ochre" />
-                <h3 className="font-serif text-base font-medium">
-                  Chronological Strata History
-                </h3>
-              </div>
+            {/* Timeline Sediment Feed */}
+            <div className="space-y-3">
+              <h3 className="font-serif text-lg font-medium text-stone-warm-100 flex items-center justify-between">
+                <span>Sediment Timeline</span>
+                <span className="text-xs font-mono text-stone-warm-500 font-normal">
+                  Oldest at Bedrock
+                </span>
+              </h3>
 
-              <div className="pt-2">
-                {/* Earliest Foundation Claim */}
+              <div className="space-y-2">
+                {/* Bedrock Claim */}
                 <TimelineRow
                   type="claim"
-                  actor={activeRecord.claimant}
+                  signer={activeRecord.claimant}
                   timestamp={activeRecord.commitTimestamp}
-                  txHash="0x89ab12cd34ef5678901234567890abcdef1234567890abcdef1234567890abcdef"
+                  title="Earliest Provenance Claim (Bedrock)"
+                  isBase={true}
                 />
 
-                {/* Stacked Attestation Vouches */}
-                {activeRecord.attestations.map((att, idx) => (
+                {/* Attestation Layers */}
+                {activeRecord.attestations.map((att, index) => (
                   <TimelineRow
-                    key={`att-row-${idx}`}
+                    key={index}
                     type="attestation"
-                    actor={att.attester}
+                    signer={att.attester}
                     timestamp={att.timestamp}
                     verdict={att.verdict}
                     confidence={att.confidence}
-                    evidenceHash={att.evidenceHash}
+                    title={`Attestation #${index + 1}`}
                   />
                 ))}
               </div>
             </div>
 
-            {/* Vouch / Add Attestation Section (Permissionless) */}
-            <div className="p-6 bg-graphite-900/60 border border-hairline rounded-sm space-y-4">
-              <h3 className="font-serif text-base font-medium text-stone-warm-100">
-                Post an Attestation (Permissionless Vouch)
-              </h3>
-              <p className="text-xs text-stone-warm-400 leading-relaxed">
-                Any address or attester agent can vouch for or dispute this document.
-                The verdict is recorded permanently on the document hash.
+            {/* Permissionless Attestation Studio */}
+            <div className="p-6 bg-graphite-900 border border-hairline rounded-sm space-y-4">
+              <div className="flex items-center gap-2 text-stone-warm-200">
+                <Sliders className="w-4 h-4 text-ochre" />
+                <h3 className="font-serif text-lg font-medium text-stone-warm-100">
+                  Attestation Studio
+                </h3>
+              </div>
+              <p className="text-xs text-stone-warm-400 leading-relaxed font-sans">
+                Anyone can post a permissionless attestation for this record. Autonomous agents and
+                institutional verifiers vouch for citation integrity or AI origin signatures.
               </p>
 
-              <form onSubmit={handlePostAttestation} className="space-y-4">
+              <form onSubmit={handlePostAttestation} className="space-y-4 pt-2">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-mono text-stone-warm-400 uppercase tracking-wider">
-                      Verdict
+                  <div>
+                    <label className="block text-xs font-mono text-stone-warm-400 mb-1.5">
+                      Verdict Type
                     </label>
                     <select
                       value={attestationInput.verdict}
                       onChange={(e) =>
-                        setAttestationInput({
-                          ...attestationInput,
-                          verdict: e.target.value,
-                        })
+                        setAttestationInput({ ...attestationInput, verdict: e.target.value })
                       }
-                      className="w-full bg-graphite-950 border border-hairline rounded-sm px-3 py-2 text-xs font-mono text-stone-warm-200 focus:outline-none focus:border-ochre"
+                      className="w-full bg-graphite-950 border border-hairline rounded-sm px-3 py-2 text-xs font-mono text-stone-warm-100 focus:outline-none focus:border-ochre"
                     >
-                      <option value="authentic">authentic (Confirmed original)</option>
-                      <option value="verified">verified (Citations match)</option>
-                      <option value="ai-generated">ai-generated (Synthetic origin)</option>
-                      <option value="disputed">disputed (Contested claims)</option>
+                      <option value="authentic">Authentic / Verified Citation</option>
+                      <option value="ai-generated">AI-Generated Provenance</option>
+                      <option value="disputed">Disputed / Prior Art Found</option>
                     </select>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-mono text-stone-warm-400 uppercase tracking-wider">
-                      Confidence (0-100%)
-                    </label>
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <label className="text-xs font-mono text-stone-warm-400">
+                        Confidence Score
+                      </label>
+                      <span className="text-xs font-mono text-ochre tabular">
+                        {attestationInput.confidence}% ({parseInt(attestationInput.confidence, 10) * 100} bps)
+                      </span>
+                    </div>
                     <input
-                      type="number"
-                      min="1"
+                      type="range"
+                      min="50"
                       max="100"
                       value={attestationInput.confidence}
                       onChange={(e) =>
-                        setAttestationInput({
-                          ...attestationInput,
-                          confidence: e.target.value,
-                        })
+                        setAttestationInput({ ...attestationInput, confidence: e.target.value })
                       }
-                      className="w-full bg-graphite-950 border border-hairline rounded-sm px-3 py-2 text-xs font-mono text-stone-warm-200 focus:outline-none focus:border-ochre"
+                      className="w-full accent-ochre bg-graphite-950 h-2 rounded-lg cursor-pointer"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[11px] font-mono text-stone-warm-400 uppercase tracking-wider">
-                    Evidence Citation Notes
+                <div>
+                  <label className="block text-xs font-mono text-stone-warm-400 mb-1.5">
+                    Evidence Citation / Verification Notes
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Verified against clinical trial CTRI/2026/04/01928"
+                  <Input
+                    placeholder="e.g. Verified against USPTO patent database reference #91820..."
                     value={attestationInput.notes}
                     onChange={(e) =>
-                      setAttestationInput({
-                        ...attestationInput,
-                        notes: e.target.value,
-                      })
+                      setAttestationInput({ ...attestationInput, notes: e.target.value })
                     }
-                    className="w-full bg-graphite-950 border border-hairline rounded-sm px-3 py-2 text-xs font-mono text-stone-warm-200 focus:outline-none focus:border-ochre"
                   />
                 </div>
 
                 <div className="flex items-center justify-between pt-2">
-                  <span className="text-[11px] text-stone-warm-500 font-mono">
-                    Sponsored via Relayer
+                  <span className="text-[11px] font-mono text-stone-warm-500">
+                    Will stack a new stone layer above current cairn
                   </span>
-                  <Button type="submit" size="sm" isLoading={isAttesting}>
-                    Post Attestation Stone
+                  <Button type="submit" isLoading={isAttesting} size="sm" className="gap-1.5">
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Publish Attestation</span>
                   </Button>
                 </div>
               </form>
@@ -378,12 +427,11 @@ function VerifyContent() {
           </div>
         </div>
       ) : (
-        <div className="p-12 text-center border border-hairline rounded-sm bg-graphite-900/40">
-          <p className="text-stone-warm-400 font-serif text-lg">
-            No document record found for this query.
-          </p>
-          <p className="text-stone-warm-500 text-xs mt-1">
-            Try selecting one of the sample records above.
+        <div className="p-12 text-center border border-dashed border-hairline rounded-sm space-y-3">
+          <AlertCircle className="w-8 h-8 text-stone-warm-500 mx-auto" />
+          <p className="text-sm font-serif text-stone-warm-200">No Record Found</p>
+          <p className="text-xs text-stone-warm-500">
+            Query a 66-character hex hash or select one of the pre-seeded judge samples above.
           </p>
         </div>
       )}
@@ -393,14 +441,14 @@ function VerifyContent() {
 
 export default function VerifyPage() {
   return (
-    <React.Suspense
+    <Suspense
       fallback={
-        <div className="max-w-7xl mx-auto px-6 py-24 text-center text-xs font-mono text-stone-warm-500">
-          Loading verification column...
+        <div className="max-w-7xl mx-auto px-6 py-24 text-center font-mono text-xs text-stone-warm-500">
+          Loading Verification Column...
         </div>
       }
     >
       <VerifyContent />
-    </React.Suspense>
+    </Suspense>
   );
 }

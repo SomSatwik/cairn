@@ -3,13 +3,25 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'motion/react';
-import { ArrowRight, CheckCircle2, ShieldAlert, Sparkles, RefreshCw } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  ShieldAlert,
+  Sparkles,
+  RefreshCw,
+  Download,
+  Lock,
+  Unlock,
+  Radio,
+  FileCheck2,
+} from 'lucide-react';
 import { Dropzone } from '@/components/ui/Dropzone';
 import { Button } from '@/components/ui/Button';
 import { HashChip } from '@/components/ui/HashChip';
 import { Stone } from '@/components/cairn/Stone';
 import { getOrCreateJudgeKey } from '@/lib/judgeMode';
-import { keccak256, encodePacked, type Hex } from 'viem';
+import { sound } from '@/lib/sound';
+import { keccak256, encodePacked, stringToHex, type Hex } from 'viem';
 
 type Step = 'HASH' | 'COMMIT' | 'REVEAL' | 'CONFIRMED';
 
@@ -30,12 +42,7 @@ export default function ClaimPage() {
     setClaimantAddress(judge.address);
   }, []);
 
-  const handleFileHashed = (file: File, hash: string) => {
-    setFileName(file.name);
-    setDocHash(hash);
-    setError(null);
-
-    // Generate random 32-byte salt
+  const generateSaltAndCommitment = (hash: string, claimant: Hex) => {
     const randomBytes = new Uint8Array(32);
     crypto.getRandomValues(randomBytes);
     const generatedSalt = ('0x' +
@@ -44,15 +51,36 @@ export default function ClaimPage() {
         .join('')) as Hex;
     setSalt(generatedSalt);
 
-    // Compute commitment = keccak256(docHash, salt, claimant)
+    const computed = keccak256(
+      encodePacked(
+        ['bytes32', 'bytes32', 'address'],
+        [hash as Hex, generatedSalt, claimant]
+      )
+    );
+    setCommitment(computed);
+  };
+
+  const handleFileHashed = (file: File, hash: string) => {
+    setFileName(file.name);
+    setDocHash(hash);
+    setError(null);
+    sound.playStoneSettle();
+
     if (claimantAddress) {
-      const computed = keccak256(
-        encodePacked(
-          ['bytes32', 'bytes32', 'address'],
-          [hash as Hex, generatedSalt, claimantAddress]
-        )
-      );
-      setCommitment(computed);
+      generateSaltAndCommitment(hash, claimantAddress);
+    }
+  };
+
+  const handleLoadDemoDocument = () => {
+    const demoContent = 'CONFIDENTIAL PATENT SPECIFICATION: Perovskite Single-Crystal Photovoltaic Cell Substrate #2026-X';
+    const computedHash = keccak256(stringToHex(demoContent));
+    setFileName('perovskite-cell-patent-specification.pdf');
+    setDocHash(computedHash);
+    setError(null);
+    sound.playStoneSettle();
+
+    if (claimantAddress) {
+      generateSaltAndCommitment(computedHash, claimantAddress);
     }
   };
 
@@ -62,7 +90,6 @@ export default function ClaimPage() {
     setError(null);
 
     try {
-      // If we have an ephemeral judge key or wallet, attempt relay submission
       const res = await fetch('/api/relay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -82,8 +109,15 @@ export default function ClaimPage() {
       const data = await res.json();
       const now = Math.floor(Date.now() / 1000);
       setCommitTimestamp(now);
-      setTxHash(data.txHash || ('0x' + Array.from(crypto.getRandomValues(new Uint8Array(32))).map((b) => b.toString(16).padStart(2, '0')).join('')));
+      setTxHash(
+        data.txHash ||
+          ('0x' +
+            Array.from(crypto.getRandomValues(new Uint8Array(32)))
+              .map((b) => b.toString(16).padStart(2, '0'))
+              .join(''))
+      );
       setStep('COMMIT');
+      sound.playCommitSeal();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Commit submission failed');
     } finally {
@@ -119,11 +153,45 @@ export default function ClaimPage() {
         setTxHash(data.txHash);
       }
       setStep('CONFIRMED');
+      sound.playStoneSettle();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Reveal transaction failed');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleDownloadCertificate = () => {
+    if (!docHash) return;
+    const passportData = {
+      protocol: 'CAIRN-STRATA-V1',
+      network: 'Monad Testnet (Chain ID 10143)',
+      contract: 'CairnRegistry (Immutable)',
+      document: {
+        fileName,
+        docHash,
+        claimant: claimantAddress,
+        commitTimestamp,
+        priorityDate: commitTimestamp ? new Date(commitTimestamp * 1000).toISOString() : null,
+      },
+      proof: {
+        salt,
+        commitment,
+        txHash,
+        status: 'CONFIRMED_BEDROCK_PRIORITY',
+      },
+    };
+
+    const blob = new Blob([JSON.stringify(passportData, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cairn-passport-${docHash.slice(2, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    sound.playTick();
   };
 
   const handleReset = () => {
@@ -135,10 +203,11 @@ export default function ClaimPage() {
     setCommitTimestamp(null);
     setTxHash(null);
     setError(null);
+    sound.playTick();
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-16">
+    <div className="max-w-7xl mx-auto px-6 py-12 sm:py-16">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
         {/* Left 7 Columns: Vertical Stepper & Input */}
         <div className="lg:col-span-7 space-y-8">
@@ -151,9 +220,8 @@ export default function ClaimPage() {
               Claim Document Priority
             </h1>
             <p className="text-sm text-stone-warm-400 mt-2 max-w-xl leading-relaxed">
-              Submit your document hash through the commit-reveal primitive. The
-              commit timestamp establishes your immutable priority time, protecting
-              against mempool front-running.
+              Submit your document hash through the front-running-immune primitive.
+              The commit timestamp seals your priority date before revealing the content hash.
             </p>
           </div>
 
@@ -178,7 +246,7 @@ export default function ClaimPage() {
               }`}
             >
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <span className="w-6 h-6 rounded-full bg-graphite-800 border border-hairline flex items-center justify-center text-xs font-mono text-stone-warm-200">
                     1
                   </span>
@@ -187,31 +255,49 @@ export default function ClaimPage() {
                   </h3>
                 </div>
                 {docHash && (
-                  <span className="text-xs font-mono text-ochre flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Ready
+                  <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Hash Ready
                   </span>
                 )}
               </div>
 
               {step === 'HASH' && !docHash ? (
-                <Dropzone onFileHashed={handleFileHashed} />
+                <div className="space-y-4">
+                  <Dropzone onFileHashed={handleFileHashed} />
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-[11px] font-mono text-stone-warm-500">
+                      Or test with sample data:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleLoadDemoDocument}
+                      className="px-3 py-1 bg-graphite-800 hover:bg-graphite-700 border border-hairline rounded-xs text-xs font-mono text-stone-warm-200 transition-colors"
+                    >
+                      Load Demo Patent Document
+                    </button>
+                  </div>
+                </div>
               ) : (
                 docHash && (
                   <div className="space-y-3 pt-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-graphite-950 border border-hairline rounded-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-graphite-950 border border-hairline rounded-sm">
                       <div className="space-y-1">
                         <p className="text-xs text-stone-warm-400 font-sans">
-                          File: <span className="text-stone-warm-200">{fileName}</span>
+                          Document: <span className="text-stone-warm-100 font-medium">{fileName}</span>
                         </p>
                         <HashChip hash={docHash} label="docHash" truncateLength={8} />
                       </div>
                       {step === 'HASH' && (
                         <Button
                           size="sm"
-                          onClick={() => setStep('COMMIT')}
-                          className="self-end"
+                          onClick={() => {
+                            setStep('COMMIT');
+                            sound.playTick();
+                          }}
+                          className="self-end gap-1.5"
                         >
-                          Next: Blind Commit
+                          <span>Proceed to Commit</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
                         </Button>
                       )}
                     </div>
@@ -231,34 +317,33 @@ export default function ClaimPage() {
               }`}
             >
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <span className="w-6 h-6 rounded-full bg-graphite-800 border border-hairline flex items-center justify-center text-xs font-mono text-stone-warm-200">
                     2
                   </span>
                   <h3 className="font-serif text-base font-medium text-stone-warm-100">
-                    Blind Commitment Phase
+                    Phase 1: Blind Commitment
                   </h3>
                 </div>
                 {commitTimestamp && (
-                  <span className="text-xs font-mono text-ochre flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Committed
+                  <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Sealed at {new Date(commitTimestamp * 1000).toLocaleTimeString()}
                   </span>
                 )}
               </div>
 
               {step === 'COMMIT' && (
                 <div className="space-y-4">
-                  <p className="text-xs text-stone-warm-400 leading-relaxed">
-                    A blind hash commitment is computed by combining your docHash, a
-                    locally generated cryptographic salt, and your claimant address.
-                    This conceals your document contents entirely while securing your
-                    earliest timestamp.
+                  <p className="text-xs text-stone-warm-400 leading-relaxed font-sans">
+                    A blind hash commitment is derived from your document hash, a secret local salt,
+                    and your claimant address. The Monad blockchain records the exact block timestamp
+                    without seeing what is being claimed.
                   </p>
 
-                  <div className="p-3 bg-graphite-950 border border-hairline rounded-sm space-y-2 font-mono text-xs">
+                  <div className="p-3.5 bg-graphite-950 border border-hairline rounded-sm space-y-2.5 font-mono text-xs">
                     <div className="flex justify-between items-center">
                       <span className="text-stone-warm-500">Claimant:</span>
-                      <span className="text-stone-warm-300 tabular">
+                      <span className="text-stone-warm-200 tabular">
                         {claimantAddress ? `${claimantAddress.slice(0, 10)}…` : '—'}
                       </span>
                     </div>
@@ -270,22 +355,25 @@ export default function ClaimPage() {
                     )}
                     {commitment && (
                       <div className="flex justify-between items-center">
-                        <span className="text-stone-warm-500">Commitment:</span>
+                        <span className="text-stone-warm-500">Blinded Commitment:</span>
                         <HashChip hash={commitment} truncateLength={6} />
                       </div>
                     )}
                   </div>
 
                   <div className="flex items-center justify-between pt-2">
-                    <span className="text-[11px] text-stone-warm-500 font-mono">
-                      Gas sponsored via Judge Mode Relayer
+                    <span className="text-[11px] text-stone-warm-500 font-mono flex items-center gap-1.5">
+                      <Radio className="w-3 h-3 text-emerald-400" />
+                      <span>Gas Subsidized via Monad Relayer</span>
                     </span>
                     <Button
                       onClick={handleExecuteCommit}
                       isLoading={isSubmitting}
                       size="sm"
+                      className="gap-1.5"
                     >
-                      Broadcast Commit
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Broadcast Commitment</span>
                     </Button>
                   </div>
                 </div>
@@ -303,40 +391,41 @@ export default function ClaimPage() {
               }`}
             >
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <span className="w-6 h-6 rounded-full bg-graphite-800 border border-hairline flex items-center justify-center text-xs font-mono text-stone-warm-200">
                     3
                   </span>
                   <h3 className="font-serif text-base font-medium text-stone-warm-100">
-                    Reveal &amp; Anchor Priority
+                    Phase 2: Reveal &amp; Anchor Priority
                   </h3>
                 </div>
                 {step === 'CONFIRMED' && (
-                  <span className="text-xs font-mono text-ochre flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Revealed
+                  <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Priority Established
                   </span>
                 )}
               </div>
 
               {step === 'REVEAL' && (
                 <div className="space-y-4">
-                  <p className="text-xs text-stone-warm-400 leading-relaxed">
-                    Publish your docHash and salt. The Cairn smart contract verifies
-                    that your reveal matches the prior commitment and permanently
-                    records your claim with the <strong>COMMIT time</strong> as your
-                    priority date.
+                  <p className="text-xs text-stone-warm-400 leading-relaxed font-sans">
+                    Publish your document hash and salt. The CairnRegistry validates that your reveal
+                    reproduces the earlier commitment and permanently stores the claim with the{' '}
+                    <strong className="text-stone-warm-200">COMMIT timestamp</strong> as its immutable priority date!
                   </p>
 
                   <div className="flex items-center justify-between pt-2">
                     <span className="text-[11px] text-stone-warm-500 font-mono">
-                      Priority Date Locked: {commitTimestamp ? new Date(commitTimestamp * 1000).toLocaleTimeString() : '—'}
+                      Target Anchor: {commitTimestamp ? new Date(commitTimestamp * 1000).toLocaleTimeString() : '—'}
                     </span>
                     <Button
                       onClick={handleExecuteReveal}
                       isLoading={isSubmitting}
                       size="sm"
+                      className="gap-1.5"
                     >
-                      Publish Reveal
+                      <Unlock className="w-3.5 h-3.5" />
+                      <span>Execute Reveal</span>
                     </Button>
                   </div>
                 </div>
@@ -344,44 +433,51 @@ export default function ClaimPage() {
             </div>
           </div>
 
-          {/* Step 4: Confirmed State */}
+          {/* Confirmed Success Certificate */}
           {step === 'CONFIRMED' && (
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              className="p-6 bg-graphite-900 border border-ochre/40 rounded-sm space-y-4"
+              className="p-6 bg-graphite-900 border border-emerald-500/40 rounded-sm space-y-4 shadow-xl"
             >
-              <div className="flex items-center gap-2 text-ochre">
-                <CheckCircle2 className="w-5 h-5" />
-                <h3 className="font-serif text-lg font-medium text-stone-warm-100">
-                  Priority Claim Anchored on Monad
-                </h3>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <CheckCircle2 className="w-5 h-5" />
+                  <h3 className="font-serif text-lg font-medium text-stone-warm-100">
+                    Priority Established on Monad Testnet
+                  </h3>
+                </div>
+                <span className="text-xs font-mono text-stone-warm-500">
+                  Block Priority Guaranteed
+                </span>
               </div>
 
-              <p className="text-xs text-stone-warm-300 leading-relaxed">
-                Your claim has settled into the foundation strata stone. The commit
-                timestamp is permanently bound to your cryptographic identity.
+              <p className="text-xs text-stone-warm-300 leading-relaxed font-sans">
+                Your claim has settled into the foundation strata stone. The commit timestamp has been
+                permanently sealed as your official priority anchor.
               </p>
 
-              <div className="p-3 bg-graphite-950 border border-hairline rounded-sm space-y-2 text-xs font-mono">
+              <div className="p-3.5 bg-graphite-950 border border-hairline rounded-sm space-y-2 text-xs font-mono">
                 <div className="flex justify-between items-center">
                   <span className="text-stone-warm-500">Document Hash:</span>
                   <HashChip hash={docHash!} truncateLength={8} />
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-stone-warm-500">Claimant:</span>
-                  <span className="text-stone-warm-300 tabular">
-                    {claimantAddress}
-                  </span>
+                  <span className="text-stone-warm-300 tabular">{claimantAddress}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-stone-warm-500">Priority Timestamp:</span>
-                  <span className="text-stone-warm-200 tabular">
-                    {commitTimestamp
-                      ? new Date(commitTimestamp * 1000).toLocaleString()
-                      : '—'}
+                  <span className="text-emerald-400 tabular">
+                    {commitTimestamp ? new Date(commitTimestamp * 1000).toLocaleString() : '—'}
                   </span>
                 </div>
+                {txHash && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-stone-warm-500">Transaction:</span>
+                    <HashChip hash={txHash} truncateLength={8} />
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -391,6 +487,12 @@ export default function ClaimPage() {
                     <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
+
+                <Button variant="secondary" size="sm" onClick={handleDownloadCertificate} className="gap-1.5">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export Content Passport</span>
+                </Button>
+
                 <Button variant="outline" size="sm" onClick={handleReset}>
                   <RefreshCw className="w-3 h-3 mr-1.5" />
                   Claim Another
@@ -401,75 +503,78 @@ export default function ClaimPage() {
         </div>
 
         {/* Right 5 Columns: Interactive Strata Assembly Visualization */}
-        <div className="lg:col-span-5 flex flex-col items-center justify-center p-8 bg-graphite-900/40 border border-hairline rounded-sm">
+        <div className="lg:col-span-5 flex flex-col items-center justify-between p-8 bg-graphite-900/40 border border-hairline rounded-sm min-h-[500px]">
           <div className="w-full flex items-center justify-between pb-6 border-b border-hairline text-xs font-mono text-stone-warm-400">
-            <span>Strata Placement</span>
+            <span>Strata Placement Stage</span>
             <span className="text-ochre">
               {step === 'CONFIRMED'
-                ? 'Base Stone Settled'
+                ? 'Bedrock Stone Anchored'
                 : step === 'COMMIT'
-                ? 'Commitment Prepared'
-                : 'Awaiting File'}
+                ? 'Commitment Suspended'
+                : 'Awaiting Document'}
             </span>
           </div>
 
-          <div className="py-16 w-full flex flex-col items-center justify-center min-h-[360px]">
+          <div className="py-12 w-full flex flex-col items-center justify-center flex-1">
             {step === 'CONFIRMED' ? (
               <motion.div
-                initial={{ scale: 0.9, y: 15 }}
+                initial={{ scale: 0.88, y: 30 }}
                 animate={{ scale: 1, y: 0 }}
                 transition={{ type: 'spring', stiffness: 220, damping: 20 }}
                 className="flex flex-col items-center"
               >
                 <Stone
                   index={0}
-                  width={250}
-                  height={44}
+                  width={260}
+                  height={46}
                   variant={3}
                   colorTone="ochre-accent"
                   label={`Claim: ${claimantAddress?.slice(0, 6)}…`}
-                  sublabel="Foundation Strata"
+                  sublabel="Foundation Strata Stone"
                   isBase={true}
                 />
-                <div className="w-48 h-[1px] bg-gradient-to-r from-transparent via-ochre/40 to-transparent mt-3" />
-                <p className="text-[11px] text-stone-warm-400 font-mono mt-4">
-                  Foundation stone permanently placed
+                <div className="w-52 h-[1px] bg-gradient-to-r from-transparent via-ochre/40 to-transparent mt-3" />
+                <p className="text-xs text-stone-warm-300 font-mono mt-4 flex items-center gap-1.5">
+                  <FileCheck2 className="w-4 h-4 text-ochre" />
+                  <span>Bedrock Priority Formed</span>
                 </p>
               </motion.div>
             ) : step === 'COMMIT' ? (
               <div className="flex flex-col items-center space-y-4">
                 <motion.div
-                  animate={{ y: [0, -6, 0] }}
-                  transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
+                  animate={{ y: [0, -8, 0] }}
+                  transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut' }}
                 >
                   <Stone
                     index={0}
-                    width={230}
-                    height={40}
+                    width={240}
+                    height={42}
                     variant={1}
                     colorTone="cool"
-                    label="Pending Reveal"
-                    sublabel="Blinded Commitment"
+                    label="Blinded Commitment"
+                    sublabel="Pending Phase 2 Reveal"
                   />
                 </motion.div>
-                <p className="text-[11px] text-stone-warm-500 font-mono">
-                  Stone suspended above bedrock until reveal
+                <p className="text-xs text-stone-warm-400 font-mono text-center">
+                  Stone suspended above bedrock.<br />
+                  Reveal establishes physical contact.
                 </p>
               </div>
             ) : (
               <div className="flex flex-col items-center text-center space-y-3">
-                <div className="w-36 h-8 border border-dashed border-hairline rounded-sm flex items-center justify-center text-stone-warm-600 text-xs font-mono">
-                  [Empty Strata]
+                <div className="w-40 h-10 border border-dashed border-hairline rounded-sm flex items-center justify-center text-stone-warm-600 text-xs font-mono">
+                  [Empty Foundation]
                 </div>
-                <p className="text-xs text-stone-warm-500 max-w-[200px]">
-                  Drop a file on the left to carve your foundation stone.
+                <p className="text-xs text-stone-warm-500 max-w-[220px]">
+                  Drop a file or load the demo patent to carve your foundation stone.
                 </p>
               </div>
             )}
           </div>
 
-          <div className="w-full pt-4 border-t border-hairline text-[11px] font-mono text-stone-warm-500">
-            Time is sediment. Older claims remain at the bedrock.
+          <div className="w-full pt-4 border-t border-hairline text-[11px] font-mono text-stone-warm-500 flex justify-between">
+            <span>STRATA Principle:</span>
+            <span>Older claims form the bedrock.</span>
           </div>
         </div>
       </div>
